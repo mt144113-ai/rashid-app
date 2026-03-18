@@ -5,23 +5,28 @@ import PyPDF2
 # إعداد واجهة التطبيق
 st.set_page_config(page_title="مساعد فرع رشيد الذكي", layout="wide")
 
-# تصميم الواجهة العربية
+# تصميم الواجهة العربية (تصحيح الخطأ هنا)
 st.markdown("""
     <style>
     .reportview-container { text-align: right; direction: rtl; }
     .stTextInput > div > div > input { text-align: right; direction: rtl; }
+    div[st-html="true"] { text-align: right; direction: rtl; }
     </style>
-    """, unsafe_allow_stdio=True)
+    """, unsafe_allow_html=True)
 
-st.title("🤖 مساعد فرع رشيد - نظام الاستعلام عن المستندات")
-st.info("مرحباً بك! قم برفع ملفات PDF (لوائح، جداول، أو تعليمات) واسأل عنها.")
+st.title("🤖 مساعد فرع رشيد - نظام الاستعلام")
+st.info("مرحباً بك! قم برفع ملفات PDF واسأل عنها.")
 
 # جلب مفتاح API من إعدادات الأمان في Streamlit
 try:
-    GOOGLE_API_KEY = st.secrets["GOOGLE_API_KEY"]
-    genai.configure(api_key=GOOGLE_API_KEY)
-except:
-    st.error("خطأ: لم يتم ضبط 'GOOGLE_API_KEY' في إعدادات Secrets.")
+    if "GOOGLE_API_KEY" in st.secrets:
+        GOOGLE_API_KEY = st.secrets["GOOGLE_API_KEY"]
+        genai.configure(api_key=GOOGLE_API_KEY)
+    else:
+        st.error("خطأ: لم يتم العثور على GOOGLE_API_KEY في Secrets.")
+        st.stop()
+except Exception as e:
+    st.error(f"حدث خطأ في قراءة الإعدادات: {e}")
     st.stop()
 
 # وظيفة استخراج النص
@@ -42,12 +47,9 @@ def extract_text_from_pdf(pdf_file):
 with st.sidebar:
     st.header("📁 إدارة الملفات")
     uploaded_files = st.file_uploader("ارفع ملفات الفرع هنا", type="pdf", accept_multiple_files=True)
-    if uploaded_files:
-        st.success(f"تم تحميل {len(uploaded_files)} ملفات")
 
 # منطقة المحادثة
 if uploaded_files:
-    # دمج نصوص كافة الملفات
     all_context = ""
     for f in uploaded_files:
         all_context += extract_text_from_pdf(f)
@@ -60,29 +62,12 @@ if uploaded_files:
 
         with st.chat_message("assistant"):
             with st.spinner("جاري تحليل البيانات..."):
-                model = genai.GenerativeModel('gemini-1.5-flash')
-                
-                # بناء البرومبت الاحترافي
-                prompt = f"""
-                أنت مساعد ذكي مخصص لخدمة فريق عمل "فرع رشيد". 
-                مهمتك هي الإجابة على أسئلة الموظفين بناءً على النص المرفق فقط.
-                
-                القواعد:
-                1. استخدم اللغة العربية بأسلوب مهني وواضح.
-                2. إذا كانت المعلومة غير موجودة في النص، قل بكل أدب: "عذراً، لم أجد إجابة لهذا السؤال في المستندات المرفوعة".
-                3. كن دقيقاً جداً في الأرقام والمواعيد.
-                
-                النص المرجعي:
-                {all_context}
-                
-                سؤال الموظف:
-                {user_question}
-                """
-                
                 try:
+                    model = genai.GenerativeModel('gemini-1.5-flash')
+                    prompt = f"استخدم النص التالي للإجابة على السؤال باللغة العربية:\nالنص:\n{all_context}\nالسؤال: {user_question}"
                     response = model.generate_content(prompt)
                     st.write(response.text)
                 except Exception as e:
-                    st.error("حدث خطأ أثناء الاتصال بالذكاء الاصطناعي.")
+                    st.error(f"حدث خطأ أثناء الاتصال بالذكاء الاصطناعي: {e}")
 else:
     st.warning("👈 من فضلك ارفع ملف PDF واحد على الأقل من القائمة الجانبية للبدء.")
