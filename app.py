@@ -1,67 +1,60 @@
 import streamlit as st
 import google.generativeai as genai
+from google.generativeai.types import RequestOptions
 import PyPDF2
 
 # 1. إعدادات الصفحة
-st.set_page_config(page_title="مساعد فرع راشد الذكي", layout="wide")
+st.set_page_config(page_title="مساعد فرع رشيد الذكي", layout="wide")
 
-# 2. الربط بالمفتاح من الـ Secrets
+# 2. الربط بالمفتاح (Secrets)
 if "GOOGLE_API_KEY" in st.secrets:
-    # إعداد المكتبة لاستخدام واجهة REST بدلاً من gRPC لحل مشكلة الـ 404
+    # تهيئة المكتبة مع فرض استخدام بروتوكول REST فقط
     genai.configure(api_key=st.secrets["GOOGLE_API_KEY"], transport='rest')
 else:
-    st.error("يرجى إضافة GOOGLE_API_KEY في إعدادات Secrets في Streamlit Cloud")
+    st.error("يرجى إضافة GOOGLE_API_KEY في إعدادات Secrets")
     st.stop()
 
-# 3. دالة استخراج النص من الـ PDF
+# 3. دالة استخراج النص
 def get_pdf_text(pdf_docs):
     text = ""
     for pdf in pdf_docs:
         try:
             pdf_reader = PyPDF2.PdfReader(pdf)
             for page in pdf_reader.pages:
-                content = page.extract_text()
-                if content:
-                    text += content
-        except Exception as e:
-            st.error(f"خطأ في قراءة الملف: {e}")
+                text += page.extract_text() or ""
+        except:
+            continue
     return text
 
-# 4. واجهة المستخدم
+# 4. الواجهة
 st.title("🤖 مساعد فرع رشيد الذكي")
 
 with st.sidebar:
-    st.header("إدارة الملفات")
-    pdf_files = st.file_uploader("ارفع ملفات PDF (مثل لائحة الجزاءات)", type="pdf", accept_multiple_files=True)
+    st.header("الملفات")
+    pdf_files = st.file_uploader("ارفع ملفات PDF هنا", type="pdf", accept_multiple_files=True)
 
 if pdf_files:
-    # استخراج النص
-    with st.spinner("جاري معالجة المستندات..."):
-        context_text = get_pdf_text(pdf_files)
-    
-    # منطقة الدردشة
+    context_text = get_pdf_text(pdf_files)
     question = st.chat_input("اسأل عن أي شيء في الملفات...")
-    
+
     if question:
         with st.chat_message("user"):
             st.write(question)
             
         with st.chat_message("assistant"):
             try:
-                # محاولة استخدام الموديل المستقر
+                # السر هنا: إجبار الموديل على استخدام الإصدار v1 الصريح
                 model = genai.GenerativeModel('gemini-1.5-flash')
                 
-                prompt = f"أجب باللغة العربية بناءً على النص التالي فقط:\n\n{context_text}\n\nالسؤال: {question}"
+                # استخدام خيارات طلب صريحة لتجاوز الإصدارات التجريبية
+                response = model.generate_content(
+                    f"استخدم النص التالي للإجابة باللغة العربية فقط:\n{context_text}\nالسؤال: {question}",
+                    request_options=RequestOptions(api_version='v1')
+                )
                 
-                response = model.generate_content(prompt)
-                
-                if response.text:
-                    st.write(response.text)
-                else:
-                    st.warning("تعذر الحصول على رد، قد تكون هناك قيود على المحتوى.")
-                    
+                st.write(response.text)
             except Exception as e:
                 st.error(f"حدث خطأ في النظام: {e}")
-                st.info("نصيحة: تأكد من أن مفتاح API الخاص بك مأخوذ من Google AI Studio ومفعل.")
+                st.info("نصيحة: إذا استمر الخطأ، يرجى تجربة إنشاء مفتاح API جديد من Google AI Studio.")
 else:
-    st.info("👈 من فضلك ارفع ملف PDF من القائمة الجانبية للبدء.")
+    st.info("👈 يرجى رفع ملف PDF (مثل لائحة الجزاءات) للبدء.")
