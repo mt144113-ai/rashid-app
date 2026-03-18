@@ -1,36 +1,60 @@
 import streamlit as st
-import google.generativeai as genai
-from google.generativeai.types import RequestOptions
+import requests
 import PyPDF2
+import json
 
 # 1. إعدادات الصفحة
 st.set_page_config(page_title="مساعد فرع رشيد الذكي", layout="wide")
 
-# 2. الربط بالمفتاح (Secrets)
+st.markdown("""
+    <style>
+    .main { direction: rtl; text-align: right; }
+    .stMarkdown, .stText, .stTitle, .stHeader, .stCaption { text-align: right; direction: rtl; }
+    div[data-testid="stSidebar"] { direction: rtl; }
+    </style>
+    """, unsafe_allow_html=True)
+
+st.title("🤖 مساعد فرع رشيد الذكي")
+
+# 2. التأكد من وجود المفتاح
 if "GOOGLE_API_KEY" in st.secrets:
-    # تهيئة المكتبة مع فرض استخدام بروتوكول REST فقط
-    genai.configure(api_key=st.secrets["GOOGLE_API_KEY"], transport='rest')
+    API_KEY = st.secrets["GOOGLE_API_KEY"]
 else:
-    st.error("يرجى إضافة GOOGLE_API_KEY في إعدادات Secrets")
+    st.error("⚠️ يرجى إضافة GOOGLE_API_KEY في إعدادات Secrets")
     st.stop()
 
 # 3. دالة استخراج النص
 def get_pdf_text(pdf_docs):
     text = ""
     for pdf in pdf_docs:
-        try:
-            pdf_reader = PyPDF2.PdfReader(pdf)
-            for page in pdf_reader.pages:
-                text += page.extract_text() or ""
-        except:
-            continue
+        pdf_reader = PyPDF2.PdfReader(pdf)
+        for page in pdf_reader.pages:
+            text += page.extract_text() or ""
     return text
 
-# 4. الواجهة
-st.title("🤖 مساعد فرع رشيد الذكي")
+# 4. دالة الاتصال المباشر بجوجل (REST)
+def ask_gemini_direct(prompt):
+    # الرابط المباشر للإصدار المستقر
+    url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key={API_KEY}"
+    
+    headers = {'Content-Type': 'application/json'}
+    data = {
+        "contents": [{
+            "parts": [{"text": prompt}]
+        }]
+    }
+    
+    response = requests.post(url, headers=headers, data=json.dumps(data))
+    
+    if response.status_code == 200:
+        result = response.json()
+        return result['candidates'][0]['content']['parts'][0]['text']
+    else:
+        return f"خطأ في الاتصال: {response.status_code} - {response.text}"
 
+# 5. الواجهة والتشغيل
 with st.sidebar:
-    st.header("الملفات")
+    st.header("📁 الملفات")
     pdf_files = st.file_uploader("ارفع ملفات PDF هنا", type="pdf", accept_multiple_files=True)
 
 if pdf_files:
@@ -42,19 +66,9 @@ if pdf_files:
             st.write(question)
             
         with st.chat_message("assistant"):
-            try:
-                # السر هنا: إجبار الموديل على استخدام الإصدار v1 الصريح
-                model = genai.GenerativeModel('gemini-1.5-flash')
-                
-                # استخدام خيارات طلب صريحة لتجاوز الإصدارات التجريبية
-                response = model.generate_content(
-                    f"استخدم النص التالي للإجابة باللغة العربية فقط:\n{context_text}\nالسؤال: {question}",
-                    request_options=RequestOptions(api_version='v1')
-                )
-                
-                st.write(response.text)
-            except Exception as e:
-                st.error(f"حدث خطأ في النظام: {e}")
-                st.info("نصيحة: إذا استمر الخطأ، يرجى تجربة إنشاء مفتاح API جديد من Google AI Studio.")
+            with st.spinner("جاري صياغة الرد..."):
+                full_prompt = f"استخدم النص التالي للإجابة باللغة العربية فقط:\n{context_text}\nالسؤال: {question}"
+                answer = ask_gemini_direct(full_prompt)
+                st.write(answer)
 else:
     st.info("👈 يرجى رفع ملف PDF (مثل لائحة الجزاءات) للبدء.")
