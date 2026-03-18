@@ -2,47 +2,57 @@ import streamlit as st
 import google.generativeai as genai
 import PyPDF2
 
+# إعدادات الصفحة
 st.set_page_config(page_title="مساعد فرع رشيد", layout="wide")
 
-# إعداد الربط
+# الربط بمفتاح جوجل
 if "GOOGLE_API_KEY" in st.secrets:
     genai.configure(api_key=st.secrets["GOOGLE_API_KEY"])
 else:
     st.error("يرجى إضافة المفتاح في Secrets")
     st.stop()
 
-# دالة قراءة الملف
-def get_pdf_text(pdf_docs):
+# دالة قراءة الـ PDF
+def extract_text(files):
     text = ""
-    for pdf in pdf_docs:
-        pdf_reader = PyPDF2.PdfReader(pdf)
-        for page in pdf_reader.pages:
-            text += page.extract_text()
+    for f in files:
+        reader = PyPDF2.PdfReader(f)
+        for page in reader.pages:
+            text += page.extract_text() or ""
     return text
 
-st.title("🤖 مساعد فرع رشيد")
+st.title("🤖 مساعد فرع رشيد الذكي")
 
 with st.sidebar:
-    st.header("إدارة الملفات")
-    pdf_files = st.file_uploader("ارفع ملفات PDF", type="pdf", accept_multiple_files=True)
+    st.header("الملفات")
+    uploaded_files = st.file_uploader("ارفع ملفات PDF هنا", type="pdf", accept_multiple_files=True)
 
-if pdf_files:
-    # استخراج النص
-    raw_text = get_pdf_text(pdf_files)
+if uploaded_files:
+    # استخراج النص من الملفات
+    context = extract_text(uploaded_files)
     
-    user_question = st.chat_input("اسأل عن محتوى الملفات...")
+    question = st.chat_input("اسأل عن أي شيء في الملفات...")
     
-    if user_question:
+    if question:
         with st.chat_message("user"):
-            st.write(user_question)
+            st.write(question)
             
         with st.chat_message("assistant"):
             try:
-                # المحاولة باستخدام الاسم الأساسي للموديل
+                # محاولة استخدام الاسم الأكثر استقراراً للموديل
                 model = genai.GenerativeModel('gemini-1.5-flash')
-                response = model.generate_content(f"اجب بالعربية بناء على النص التالي:\n{raw_text}\nالسؤال: {user_question}")
+                
+                prompt = f"أجب باللغة العربية بناءً على النص التالي فقط:\n{context}\nالسؤال: {question}"
+                response = model.generate_content(prompt)
+                
                 st.write(response.text)
             except Exception as e:
-                st.error(f"حدث خطأ: {e}")
+                # إذا فشل، نحاول بالاسم البديل تلقائياً
+                try:
+                    model = genai.GenerativeModel('models/gemini-1.5-flash')
+                    response = model.generate_content(prompt)
+                    st.write(response.text)
+                except:
+                    st.error(f"حدث خطأ في الاتصال بموديل جوجل: {e}")
 else:
-    st.info("👈 يرجى رفع ملف PDF للبدء")
+    st.info("👈 من فضلك ارفع ملف PDF في القائمة الجانبية للبدء.")
